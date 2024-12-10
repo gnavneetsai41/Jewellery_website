@@ -78,15 +78,7 @@ const Dashboard: React.FC = () => {
     }
   };
 
-  // const formatDate = (timestamp: string) => {
-  //   return new Date(timestamp).toLocaleDateString('en-US', {
-  //     month: 'short',
-  //     day: 'numeric',
-  //     hour: '2-digit',
-  //     minute: '2-digit'
-  //   });
-  // };
-
+  
   const downloadImage = (base64String: string, type: string) => {
     const link = document.createElement('a');
     link.href = `data:image/png;base64,${base64String}`;

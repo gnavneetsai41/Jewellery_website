@@ -140,24 +140,7 @@ def classify_image(image_bytes):
         print(f"Error in classification: {str(e)}")
         return True, 0.0  # Continue without classification on error
 
-def convert_to_black_white_sketch(image_array):
-    """Convert image to black and white sketch"""
-    # Convert to grayscale
-    gray_image = cv2.cvtColor(image_array, cv2.COLOR_BGR2GRAY)
 
-    # Invert the grayscale image
-    inverted_image = 255 - gray_image
-
-    # Apply a Gaussian Blur to the inverted image
-    blurred_image = cv2.GaussianBlur(inverted_image, (21, 21), 0)
-
-    # Invert the blurred image
-    inverted_blurred_image = 255 - blurred_image
-
-    # Create the final pencil sketch effect
-    sketch_image = cv2.divide(gray_image, inverted_blurred_image, scale=256.0)
-    
-    return sketch_image
 
 def process_image_with_model(image_array, model_type):
     """Process image with specified model"""
@@ -169,17 +152,81 @@ def process_image_with_model(image_array, model_type):
         raise ValueError(f"Model {model_type} not loaded")
     
     try:
-        if model_type == "paper_sketch":
-            # Convert to black and white sketch
-            processed_image = convert_to_black_white_sketch(image_array)
-            # Convert back to RGB for consistency
-            processed_image = cv2.cvtColor(processed_image, cv2.COLOR_GRAY2RGB)
-            return processed_image
-        else:
-            predicted_image = model(image_array, training=False)
-            return (predicted_image[0] + 1) / 2
+       predicted_image = model(image_array, training=False)
+       return (predicted_image[0] + 1) / 2
     except Exception as e:
         print(f"Error processing image with {model_type} model: {str(e)}")
+        traceback.print_exc()
+        raise
+
+def convert_to_black_white_sketch(image_bytes: bytes) -> np.ndarray:
+    """
+    Converts an image (provided as bytes) to a black-and-white sketch.
+    
+    Parameters:
+        image_bytes (bytes): Input image in bytes format
+    
+    Returns:
+        np.ndarray: Processed sketch image as a numpy array in RGB format
+    """
+    try:
+        # Verify input is not empty
+        if not image_bytes:
+            raise ValueError("Empty image bytes provided")
+
+        # Convert bytes to numpy array
+        nparr = np.frombuffer(image_bytes, np.uint8)
+        if nparr.size == 0:
+            raise ValueError("Empty numpy array after converting from bytes")
+
+        # Decode image
+        image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        if image is None:
+            raise ValueError("Failed to decode image from bytes")
+        
+        print(f"Original image shape: {image.shape}")
+
+        # Convert to grayscale
+        gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        print(f"Grayscale image shape: {gray_image.shape}")
+
+        # Invert the grayscale image
+        inverted_image = 255 - gray_image
+
+        # Apply a Gaussian Blur to the inverted image
+        blurred_image = cv2.GaussianBlur(inverted_image, (21, 21), 0)
+
+        # Invert the blurred image
+        inverted_blurred_image = 255 - blurred_image
+
+        # Create the final pencil sketch effect
+        sketch_image = cv2.divide(gray_image, inverted_blurred_image, scale=256.0)
+        
+        # Ensure the output is in the correct format (uint8)
+        sketch_image = sketch_image.astype(np.uint8)
+        print(f"Sketch image shape before resize: {sketch_image.shape}")
+        
+        # Check if image dimensions are valid before resize
+        if sketch_image.shape[0] == 0 or sketch_image.shape[1] == 0:
+            raise ValueError(f"Invalid image dimensions: {sketch_image.shape}")
+        
+        # Resize to 256x256 if needed
+        sketch_image = cv2.resize(sketch_image, (256, 256), interpolation=cv2.INTER_AREA)
+        print(f"Sketch image shape after resize: {sketch_image.shape}")
+        
+        # Convert grayscale to RGB (3 channels)
+        sketch_image_rgb = cv2.cvtColor(sketch_image, cv2.COLOR_GRAY2RGB)
+        print(f"RGB image shape: {sketch_image_rgb.shape}")
+        
+        # Add batch dimension and normalize to [0, 1]
+        sketch_image_rgb = sketch_image_rgb.astype(np.float32) / 255.0
+        sketch_image_rgb = np.expand_dims(sketch_image_rgb, axis=0)
+        print(f"Final image shape: {sketch_image_rgb.shape}")
+        
+        return sketch_image_rgb
+        
+    except Exception as e:
+        print(f"Error in convert_to_black_white_sketch: {str(e)}")
         traceback.print_exc()
         raise
 
@@ -225,10 +272,28 @@ def process_image_request(request, model_type):
         try:
             # Convert original sketch to base64
             sketch_image_b64 = base64.b64encode(image_bytes).decode('utf-8')
+            if (model_type == "paper_sketch"):
+                print("Processing paper sketch...")
+                # Convert to enhanced black and white sketch
+                sketch_image = convert_to_black_white_sketch(image_bytes)
+                print("Sketch conversion complete")
+                
+                # Normalize the image for model input
+                model_input = (sketch_image * 2) - 1  # Convert [0,1] to [-1,1]
+                print(f"Model input shape: {model_input.shape}")
+                
+                # Get the model and make prediction
+                model = models.get(model_type)
+                if model is None:
+                    raise ValueError(f"Model {model_type} not loaded")
+                
+                predicted_image = model(model_input, training=False)
+                predicted_image = (predicted_image[0] + 1) / 2  # Convert [-1,1] back to [0,1]
             
-            # Process the image
-            sketch_image = load_image_for_prediction(image_bytes)
-            predicted_image = process_image_with_model(sketch_image, model_type)
+            else:
+                # Process the image
+                sketch_image = load_image_for_prediction(image_bytes)
+                predicted_image = process_image_with_model(sketch_image, model_type)
             
             # Convert generated image to base64
             generated_pil = Image.fromarray((predicted_image * 255).numpy().astype(np.uint8))
