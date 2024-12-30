@@ -50,13 +50,13 @@ def is_jewelry(caption):
     return True
 
 # Model paths
-MODEL_DIR = "D:/Empty/jewelry_website_2/backend/models"
+MODEL_DIR = "G:/jewelry_website_2/models"
 MODEL_PATHS = {
-    "gold": "D:/Empty/pix2pix_generator_epoch_46.keras",
-    "silver": "D:/Empty/pix2pix_generator_epoch_28.keras",
-    "gold_gemstone": "D:/Empty/generator_epoch_26.keras",
-    "classifier": "D:/Empty/gold_vs_sketch_model.h5",
-    "paper_sketch": "D:/Empty/pix2pix_generator_epoch_46.keras"
+    "gold": "C:/Users/NEW/Downloads/pix2pix_generator_epoch_46.keras",
+    "silver": "C:/Users/NEW/Downloads/pix2pix_generator_epoch_28.keras",
+    "gold_gemstone": "C:/Users/NEW/Downloads/generator_epoch_26.keras",
+    "classifier": "C:/Users/NEW/Downloads/gold_vs_sketch_model.h5",
+    "paper_sketch": "C:/Users/NEW/Downloads/pix2pix_generator_epoch_46.keras"
 }
 
 # Initialize models dictionary
@@ -247,11 +247,15 @@ def process_image_request(request, model_type):
 
         # Step 1: Classify the image (primary validation)
         is_valid_sketch, confidence = classify_image(image_bytes)
-        if not is_valid_sketch and confidence > 0:  # Only reject if we have a confident negative classification
+        if not is_valid_sketch or confidence <= 0:
+            feedback = "The image does not meet the sketch criteria."
+            if confidence == 0:
+                feedback += " Additionally, the classification confidence is too low."
             return jsonify({
-                "error": "The image does not appear to be a valid sketch",
+                "error": feedback,
                 "confidence": confidence
             }), 400
+
         # Step 2: Try image-to-text validation (optional)
         result = query_huggingface_api(image_bytes)
         print("Captioning Result:", result) 
